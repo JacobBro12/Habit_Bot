@@ -28,16 +28,19 @@ def _clean(text):
     return re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
 
 
-async def _generate(contents, as_json):
+async def _generate(contents, as_json, timeout=25):
     cfg = types.GenerateContentConfig(
         system_instruction=SYSTEM,
         response_mime_type="application/json" if as_json else "text/plain",
     )
     last = None
-    for attempt in range(3):
+    for attempt in range(2):
         try:
-            resp = await client.aio.models.generate_content(
-                model=config.GEMINI_MODEL, contents=contents, config=cfg
+            resp = await asyncio.wait_for(
+                client.aio.models.generate_content(
+                    model=config.GEMINI_MODEL, contents=contents, config=cfg
+                ),
+                timeout=timeout,
             )
             text = (resp.text or "").strip()
             if not text:
@@ -45,8 +48,10 @@ async def _generate(contents, as_json):
             return json.loads(_clean(text)) if as_json else text
         except Exception as exc:
             last = exc
-            log.warning("Gemini xatosi (%s-urinish): %s", attempt + 1, exc)
-            await asyncio.sleep(2 * (attempt + 1))
+            log.warning("Gemini xatosi (%s-urinish): %s", attempt + 1, exc, exc_info=True)
+            if attempt == 0:
+                await asyncio.sleep(1.5)
+    log.error("Gemini barcha urinishlardan keyin ham javob bermadi", exc_info=last)
     raise BrainError(str(last))
 
 
@@ -69,11 +74,14 @@ async def build_exercises(goal, daily_minutes, raw):
         f"Kuniga ajratilgan umumiy vaqt: {daily_minutes} daqiqa\n"
         f"Foydalanuvchi yozgani:\n\"\"\"{user_part}\"\"\"\n\n"
         "Vazifa: kunlik mashqlar ro'yxatini tuz. Foydalanuvchi mashq yozgan bo'lsa, o'sha mashqlarni saqla va "
-        "ularning daqiqalarini yozganiga moslab qo'y. Daqiqalar yig'indisi kunlik vaqtdan oshmasin va imkon "
-        "qadar unga yaqin bo'lsin. Mashq nomlari qisqa va aniq bo'lsin.\n"
+        "ularning daqiqalarini yozganiga moslab qo'y. Agar foydalanuvchi yozgani mashqlar ro'yxati bo'lmasa "
+        "(masalan salomlashuv, savol yoki maqsadga aloqasiz gap), buni e'tiborsiz qoldirib, maqsadga mos "
+        "3-5 ta mashqni o'zing tuz — har doim mashqlar ro'yxatini qaytar, hech qachon savol berma. "
+        "Daqiqalar yig'indisi kunlik vaqtdan oshmasin va imkon qadar unga yaqin bo'lsin. "
+        "Mashq nomlari qisqa va aniq bo'lsin.\n"
         'Faqat JSON qaytar: {"exercises":[{"name":"...","minutes":30}]}'
     )
-    data = await _generate(prompt, True)
+    data = await _generate(prompt, True, timeout=30)
     try:
         items = [
             {"name": str(x["name"]).strip()[:80], "minutes": int(round(float(x["minutes"])))}
@@ -115,6 +123,20 @@ async def evaluate_day(goal, tasks, report_text, photos, photo_count):
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
         raise BrainError("noto'g'ri format") from exc
     return {"score": score, "done": done, "missed": missed, "feedback": feedback}
+
+
+async def chat_reply(user, context_line, text):
+    prompt = (
+        f"Foydalanuvchi: {user['name']}\nMaqsad: {user['goal']}\n"
+        f"Hozirgi holat: {context_line}\n\n"
+        f"Foydalanuvchi yozdi:\n\"\"\"{text}\"\"\"\n\n"
+        "Vazifa: sen bu foydalanuvchining shaxsiy murabbiysisan (Main Brain). Yozganiga qisqa, tabiiy, "
+        "samimiy va motivatsion javob ber (2-4 gap). Agar savol bergan bo'lsa — javob ber. Agar kayfiyatini "
+        "yozgan bo'lsa — qo'llab-quvvatla, lekin bahonaga aylantirmang. Kerak bo'lsa hozirgi holatiga mos "
+        "eslatma qo'sh (masalan hisobot yozish yoki mashqni boshlash kerakligini). Faqat oddiy matn, "
+        "markdown belgilarisiz."
+    )
+    return await _generate(prompt, False, timeout=20)
 
 
 async def final_summary(goal, stats, lines):

@@ -37,6 +37,7 @@ def db_host():
 
 async def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s", force=True)
+    logging.getLogger("aiogram.event").setLevel(logging.WARNING)
 
     missing = [n for n in ("BOT_TOKEN", "GEMINI_API_KEY", "DATABASE_URL") if not getattr(config, n)]
     if missing:

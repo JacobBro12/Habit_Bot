@@ -7,7 +7,7 @@ from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, ErrorEvent, Message
 
 import brain
 import config
@@ -336,7 +336,8 @@ async def cb_done(cb: CallbackQuery, bot: Bot):
             log.exception("Rasm yuklab olinmadi")
     try:
         result = await brain.evaluate_day(user["goal"], tasks, day["report_text"], photos, len(file_ids))
-    except brain.BrainError:
+    except brain.BrainError as exc:
+        log.error("evaluate_day muvaffaqiyatsiz (day_id=%s): %s", day_id, exc, exc_info=True)
         await db.update_day(day_id, status="collecting_photos")
         await wait.edit_text(
             "⚠️ Main Brain hozir javob bera olmadi. Birozdan so'ng «Tayyor» tugmasini qayta bosing.",
@@ -375,11 +376,36 @@ async def cb_done(cb: CallbackQuery, bot: Bot):
     await service.check_finish(bot, user["user_id"])
 
 
+async def _context_line(user):
+    if not user:
+        return "hali maqsad qo'yilmagan"
+    day = await db.get_open_day(user["user_id"])
+    if day:
+        return f"{STATUS_TEXT.get(day['status'], day['status'])} kun bor, undan hisobot yoki rasm kutilmoqda"
+    today_day = await db.get_day_by_date(user["user_id"], service.now_local().date().isoformat())
+    if today_day and today_day["status"] == "pending":
+        return "bugungi mashqni hali boshlamagan"
+    if user["finished"]:
+        return "maqsadini yakunlagan"
+    return "hozir aktiv vazifasi yo'q, navbatdagi kunni kutmoqda"
+
+
 @router.message(StateFilter(None), F.text, ~F.text.startswith("/"))
 async def on_text(m: Message):
     day = await db.get_open_day(m.from_user.id)
     if not day:
-        await m.answer("Hozir hisobot kutilmayapti. Holatni ko'rish: /holat")
+        user = await db.get_user(m.from_user.id)
+        if not user:
+            await m.answer("Hali maqsad yo'q. Boshlash uchun /start.")
+            return
+        context = await _context_line(user)
+        try:
+            reply = await brain.chat_reply(user, context, m.text.strip())
+        except brain.BrainError as exc:
+            log.error("chat_reply muvaffaqiyatsiz: %s", exc, exc_info=True)
+            await m.answer("Hozir hisobot kutilmayapti. Holatni ko'rish: /holat")
+            return
+        await m.answer(esc(reply))
         return
     if day["status"] == "collecting_photos":
         await m.answer(
@@ -425,3 +451,23 @@ async def on_photo(m: Message, bot: Bot):
         f"📸 Rasm qabul qilindi ({count + 1}/{config.MAX_PHOTOS_PER_DAY}). Yana yuboring yoki «Tayyor» ni bosing.",
         reply_markup=kb([("✅ Tayyor", f"done:{day['id']}")]),
     )
+
+
+@router.errors()
+async def on_error(event: ErrorEvent, bot: Bot):
+    log.error(
+        "Handler'da kutilmagan xato: update_id=%s",
+        getattr(event.update, "update_id", "?"),
+        exc_info=event.exception,
+    )
+    chat = None
+    if event.update.message:
+        chat = event.update.message.chat.id
+    elif event.update.callback_query and event.update.callback_query.message:
+        chat = event.update.callback_query.message.chat.id
+    if chat:
+        try:
+            await bot.send_message(chat, "⚠️ Kutilmagan xato yuz berdi. Iltimos, qayta urinib ko'ring.")
+        except Exception:
+            log.exception("Xato haqida xabar ham yuborilmadi")
+    return True
