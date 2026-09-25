@@ -50,9 +50,7 @@ _pool = None
 
 async def init():
     global _pool
-    if not config.DATABASE_URL:
-        raise SystemExit("DATABASE_URL to'ldirilishi kerak")
-    _pool = await asyncpg.create_pool(config.DATABASE_URL, min_size=1, max_size=5, statement_cache_size=0)
+    _pool = await asyncpg.create_pool(config.DATABASE_URL, min_size=1, max_size=5, statement_cache_size=0, timeout=20)
     await _pool.execute(SCHEMA)
     await _pool.execute("UPDATE days SET status='collecting_photos' WHERE status='evaluating'")
 
