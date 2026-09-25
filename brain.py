@@ -28,30 +28,34 @@ def _clean(text):
     return re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
 
 
-async def _generate(contents, as_json, timeout=25):
+MODELS = [m for m in (config.GEMINI_MODEL, config.GEMINI_FALLBACK_MODEL) if m]
+BACKOFF = (3, 6, 10)
+
+
+async def _generate(contents, as_json, timeout=40):
     cfg = types.GenerateContentConfig(
         system_instruction=SYSTEM,
         response_mime_type="application/json" if as_json else "text/plain",
     )
     last = None
-    for attempt in range(2):
-        try:
-            resp = await asyncio.wait_for(
-                client.aio.models.generate_content(
-                    model=config.GEMINI_MODEL, contents=contents, config=cfg
-                ),
-                timeout=timeout,
-            )
-            text = (resp.text or "").strip()
-            if not text:
-                raise ValueError("bo'sh javob")
-            return json.loads(_clean(text)) if as_json else text
-        except Exception as exc:
-            last = exc
-            log.warning("Gemini xatosi (%s-urinish): %s", attempt + 1, exc, exc_info=True)
-            if attempt == 0:
-                await asyncio.sleep(1.5)
-    log.error("Gemini barcha urinishlardan keyin ham javob bermadi", exc_info=last)
+    for model in MODELS:
+        for attempt, wait in enumerate(BACKOFF, 1):
+            try:
+                resp = await asyncio.wait_for(
+                    client.aio.models.generate_content(model=model, contents=contents, config=cfg),
+                    timeout=timeout,
+                )
+                text = (resp.text or "").strip()
+                if not text:
+                    raise ValueError("bo'sh javob")
+                return json.loads(_clean(text)) if as_json else text
+            except Exception as exc:
+                last = exc
+                log.warning("Gemini xatosi (%s, %s-urinish): %s", model, attempt, exc, exc_info=True)
+                if attempt < len(BACKOFF):
+                    await asyncio.sleep(wait)
+        log.warning("Model %s barcha urinishlarda ishlamadi, keyingisiga o'tilmoqda", model)
+    log.error("Gemini barcha model va urinishlardan keyin ham javob bermadi", exc_info=last)
     raise BrainError(str(last))
 
 
