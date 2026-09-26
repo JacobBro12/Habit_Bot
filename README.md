@@ -21,6 +21,10 @@ Google serveri ba'zan (kamdan-kam) vaqtincha band bo'lib qoladi (`503 UNAVAILABL
 - **Mashqlar tuzishda** (anketa, 4-qadam): agar Gemini butunlay javob bermasa, bot foydalanuvchi yozgan matndan (masalan `Reading - 1 soat`) o'zi mahalliy reja tuzadi, hech qachon to'xtab qolmaydi.
 - **Kunlik hisobotni baholashda**: darhol muvaffaqiyatsiz bo'lsa, bot rasm va hisobotni yo'qotmasdan 3, 6, so'ng 12 daqiqadan keyin **o'zi avtomatik qayta uradi** — foydalanuvchi hech narsa qilishi shart emas. 4 marta ham ishlamasa, «Tayyor» tugmasi orqali istalgan payt qo'lda qayta urinish mumkin.
 
+## Vazifa fayllarini oldindan yuklab qo'yish
+
+Istalgan vaqtda botga fayl yuborsangiz (rasm, Word, Excel, PDF, video, ovozli xabar — xohlagan format), agar hozir hech qanday hisobot yoki rasm kutilmayotgan bo'lsa, bot uni **navbatga** qo'yadi. Har bir ish kuni «Boshladim» tugmasi bosilganda, navbatdagi birinchi fayl avtomatik yuboriladi. Kun o'tkazib yuborilsa, fayl navbatda qoladi va keyingi faol kunda chiqadi — hech narsa yo'qolmaydi. Maqsad kuni kelganda, ishlatilmagan qolgan fayllar ham yakuniy hisobot bilan birga yuboriladi.
+
 ## Ma'lumotlar qayerda saqlanadi
 
 - **Baza: PostgreSQL** (alohida serverda). Foydalanuvchilar, jadval, ballar, anketa holati shu yerda.

@@ -40,6 +40,15 @@ CREATE TABLE IF NOT EXISTS photos (
     day_id BIGINT NOT NULL,
     file_id TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS materials (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    kind TEXT NOT NULL,
+    file_id TEXT NOT NULL,
+    caption TEXT,
+    day_id BIGINT,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS fsm (
     key TEXT PRIMARY KEY,
     state TEXT,
@@ -87,6 +96,7 @@ async def create_user(user_id, chat_id, name, goal, start_date, end_date, daily_
 
 async def delete_user(user_id):
     await _pool.execute("DELETE FROM photos WHERE day_id IN (SELECT id FROM days WHERE user_id=$1)", user_id)
+    await _pool.execute("DELETE FROM materials WHERE user_id=$1", user_id)
     await _pool.execute("DELETE FROM days WHERE user_id=$1", user_id)
     await _pool.execute("DELETE FROM users WHERE user_id=$1", user_id)
 
@@ -158,6 +168,35 @@ async def get_photos(day_id):
 async def count_photos(day_id):
     row = await _one("SELECT COUNT(*) AS c FROM photos WHERE day_id=$1", day_id)
     return row["c"]
+
+
+async def add_material(user_id, kind, file_id, caption, created_at):
+    await _pool.execute(
+        "INSERT INTO materials (user_id, kind, file_id, caption, created_at) VALUES ($1,$2,$3,$4,$5)",
+        user_id, kind, file_id, caption, created_at,
+    )
+
+
+async def count_queued_materials(user_id):
+    row = await _one("SELECT COUNT(*) AS c FROM materials WHERE user_id=$1 AND day_id IS NULL", user_id)
+    return row["c"]
+
+
+async def pop_next_material(user_id, day_id):
+    async with _pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                "SELECT * FROM materials WHERE user_id=$1 AND day_id IS NULL ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED",
+                user_id,
+            )
+            if not row:
+                return None
+            await conn.execute("UPDATE materials SET day_id=$1 WHERE id=$2", day_id, row["id"])
+            return dict(row)
+
+
+async def get_leftover_materials(user_id):
+    return await _all("SELECT * FROM materials WHERE user_id=$1 AND day_id IS NULL ORDER BY id", user_id)
 
 
 async def fsm_get_state(key):

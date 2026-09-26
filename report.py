@@ -160,4 +160,17 @@ async def send_final(bot: Bot, user, days):
             log.exception("Rasm yuborishda xato")
         await asyncio.sleep(0.6)
 
+    leftover = await db.get_leftover_materials(user["user_id"])
+    if leftover:
+        import service  # aylanma import'ning oldini olish uchun shu yerda import qilinadi
+
+        await bot.send_message(
+            chat_id,
+            f"📎 <b>Ishlatilmagan vazifa fayllari</b> ({len(leftover)} ta) — bular navbatga qo'shilgan, "
+            "ammo hech qanday ish kuniga yetib bormagan:",
+        )
+        for material in leftover:
+            await service.send_material(bot, chat_id, material)
+            await asyncio.sleep(0.6)
+
     await bot.send_message(chat_id, "Yangi maqsad qo'yish uchun /start yuboring. Omad! 🚀")

@@ -35,6 +35,35 @@ async def wipe_user(user_id):
     await db.delete_user(user_id)
 
 
+MATERIAL_SEND = {
+    "photo": "send_photo",
+    "document": "send_document",
+    "video": "send_video",
+    "audio": "send_audio",
+    "voice": "send_voice",
+    "animation": "send_animation",
+}
+
+
+async def send_material(bot: Bot, chat_id, material, caption=None):
+    method = getattr(bot, MATERIAL_SEND.get(material["kind"], "send_document"))
+    try:
+        await method(chat_id, material["file_id"], caption=caption)
+        return True
+    except Exception:
+        log.exception("Material yuborilmadi (id=%s)", material["id"])
+        return False
+
+
+async def deliver_day_material(bot: Bot, user, day):
+    material = await db.pop_next_material(user["user_id"], day["id"])
+    if not material:
+        return
+    label = f"📎 <b>{plan.fmt_date(day['day'])} kungi vazifa fayli</b>"
+    caption = f"{label}\n{esc(material['caption'])}" if material["caption"] else label
+    await send_material(bot, user["chat_id"], material, caption)
+
+
 async def ask_report(bot: Bot, day):
     user = await db.get_user(day["user_id"])
     if not user:

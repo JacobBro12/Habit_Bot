@@ -70,6 +70,9 @@ async def status_text(user):
         f"✅ Muvaffaqiyatli kunlar: {stats['passed']}/{stats['total']}",
         f"⭐ O'rtacha ball: {stats['avg']}/10",
     ]
+    queued = await db.count_queued_materials(user["user_id"])
+    if queued:
+        lines.append(f"📎 Navbatda vazifa fayllari: {queued} ta")
     today_day = next((d for d in days if d["day"] == today.isoformat()), None)
     if user["finished"]:
         lines.append("\n🏁 Maqsad yakunlangan. Yangisi uchun /start.")
@@ -281,7 +284,7 @@ async def on_weekly(cb: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith("start:"))
-async def cb_begin(cb: CallbackQuery):
+async def cb_begin(cb: CallbackQuery, bot: Bot):
     day = await db.get_day(int(cb.data.split(":")[1]))
     if not day or day["user_id"] != cb.from_user.id or day["status"] != "pending":
         await cb.answer("Bu kun allaqachon boshlangan yoki yopilgan.", show_alert=True)
@@ -297,6 +300,8 @@ async def cb_begin(cb: CallbackQuery):
         f"Soat <b>{due.strftime('%H:%M')}</b>da hisobot so'rayman. Omad!",
         reply_markup=kb([("🏁 Erta tugatdim", f"early:{day['id']}")]),
     )
+    user = await db.get_user(cb.from_user.id)
+    await service.deliver_day_material(bot, user, day)
 
 
 @router.callback_query(F.data.startswith("early:"))
@@ -380,15 +385,29 @@ async def on_text(m: Message):
     )
 
 
+async def _save_material(m: Message, kind, file_id):
+    user = await db.get_user(m.from_user.id)
+    if not user:
+        await m.answer("Hali maqsad yo'q. Avval /start bilan boshlang, keyin fayl yuboring.")
+        return
+    caption = (m.caption or "").strip() or None
+    await db.add_material(user["user_id"], kind, file_id, caption, service.now_local().isoformat())
+    count = await db.count_queued_materials(user["user_id"])
+    await m.answer(
+        f"📎 Fayl saqlandi (navbatda: <b>{count}</b> ta). Har bir ish kuni boshlanganda navbatdagi fayl "
+        "avtomatik yuboriladi — o'tkazib yuborilgan kunlar ham navbatda saqlanib qoladi."
+    )
+
+
 @router.message(StateFilter(None), F.photo)
 async def on_photo(m: Message, bot: Bot):
     uid = m.from_user.id
     day = await db.get_open_day(uid)
-    if not day:
-        await m.answer("Hozir rasm kutilmayapti.")
-        return
-    if day["status"] == "awaiting_report":
+    if day and day["status"] == "awaiting_report":
         await m.answer("Avval matnli hisobot yozing: nimalarni bajardingiz, nimalarni yo'q va sabablari.")
+        return
+    if not day or day["status"] != "collecting_photos":
+        await _save_material(m, "photo", m.photo[-1].file_id)
         return
     count = await db.count_photos(day["id"])
     if count >= config.MAX_PHOTOS_PER_DAY:
@@ -406,6 +425,26 @@ async def on_photo(m: Message, bot: Bot):
         f"📸 Rasm qabul qilindi ({count + 1}/{config.MAX_PHOTOS_PER_DAY}). Yana yuboring yoki «Tayyor» ni bosing.",
         reply_markup=kb([("✅ Tayyor", f"done:{day['id']}")]),
     )
+
+
+@router.message(StateFilter(None), F.document)
+async def on_document(m: Message):
+    await _save_material(m, "document", m.document.file_id)
+
+
+@router.message(StateFilter(None), F.video)
+async def on_video(m: Message):
+    await _save_material(m, "video", m.video.file_id)
+
+
+@router.message(StateFilter(None), F.audio)
+async def on_audio(m: Message):
+    await _save_material(m, "audio", m.audio.file_id)
+
+
+@router.message(StateFilter(None), F.voice)
+async def on_voice(m: Message):
+    await _save_material(m, "voice", m.voice.file_id)
 
 
 @router.errors()
