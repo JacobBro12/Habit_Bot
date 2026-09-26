@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS days (
     due_at TEXT,
     reminders INTEGER NOT NULL DEFAULT 0,
     last_reminded_at TEXT,
+    eval_attempts INTEGER NOT NULL DEFAULT 0,
+    eval_next_at TEXT,
     UNIQUE (user_id, day)
 );
 CREATE TABLE IF NOT EXISTS photos (
@@ -52,6 +54,8 @@ async def init():
     global _pool
     _pool = await asyncpg.create_pool(config.DATABASE_URL, min_size=1, max_size=5, statement_cache_size=0, timeout=20)
     await _pool.execute(SCHEMA)
+    await _pool.execute("ALTER TABLE days ADD COLUMN IF NOT EXISTS eval_attempts INTEGER NOT NULL DEFAULT 0")
+    await _pool.execute("ALTER TABLE days ADD COLUMN IF NOT EXISTS eval_next_at TEXT")
     await _pool.execute("UPDATE days SET status='collecting_photos' WHERE status='evaluating'")
 
 
@@ -112,6 +116,14 @@ async def get_day_by_date(user_id, day):
 
 async def get_days(user_id):
     return await _all("SELECT * FROM days WHERE user_id=$1 ORDER BY day", user_id)
+
+
+async def get_days_for_eval_retry(now_iso):
+    return await _all(
+        "SELECT * FROM days WHERE status='collecting_photos' AND eval_attempts>0 "
+        "AND eval_attempts<$1 AND eval_next_at IS NOT NULL AND eval_next_at<=$2",
+        config.MAX_EVAL_RETRIES, now_iso,
+    )
 
 
 async def get_open_day(user_id):

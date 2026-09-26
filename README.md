@@ -14,6 +14,13 @@ Bot har bir foydalanuvchi uchun shaxsiy odat (habit) jadvali tuzadi, kerakli vaq
    - Hisobot kelmasa → kun 0 ball bilan o'tkazib yuboriladi, vazifalar keyingi kunga o'tadi.
 6. **Maqsad kuni** kelganda bot jadval (rasm), Main Brain xulosasi va kunma-kun rasmlarni yuboradi.
 
+## Gemini vaqtincha ishlamasa nima bo'ladi
+
+Google serveri ba'zan (kamdan-kam) vaqtincha band bo'lib qoladi (`503 UNAVAILABLE`). Bot buni ikki xil bosqichda hal qiladi:
+
+- **Mashqlar tuzishda** (anketa, 4-qadam): agar Gemini butunlay javob bermasa, bot foydalanuvchi yozgan matndan (masalan `Reading - 1 soat`) o'zi mahalliy reja tuzadi, hech qachon to'xtab qolmaydi.
+- **Kunlik hisobotni baholashda**: darhol muvaffaqiyatsiz bo'lsa, bot rasm va hisobotni yo'qotmasdan 3, 6, so'ng 12 daqiqadan keyin **o'zi avtomatik qayta uradi** — foydalanuvchi hech narsa qilishi shart emas. 4 marta ham ishlamasa, «Tayyor» tugmasi orqali istalgan payt qo'lda qayta urinish mumkin.
+
 ## Ma'lumotlar qayerda saqlanadi
 
 - **Baza: PostgreSQL** (alohida serverda). Foydalanuvchilar, jadval, ballar, anketa holati shu yerda.

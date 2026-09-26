@@ -64,6 +64,18 @@ async def process_user(bot: Bot, user, now):
     await service.check_finish(bot, uid)
 
 
+async def retry_stuck_evaluations(bot: Bot):
+    now_iso = service.now_local().isoformat()
+    for day in await db.get_days_for_eval_retry(now_iso):
+        user = await db.get_user(day["user_id"])
+        if not user:
+            continue
+        try:
+            await service.try_evaluate(bot, user, day)
+        except Exception:
+            log.exception("Avtomatik baholashda xato (day_id=%s)", day["id"])
+
+
 async def tick(bot: Bot):
     now = service.now_local()
     for user in await db.list_active_users():
@@ -71,6 +83,10 @@ async def tick(bot: Bot):
             await process_user(bot, user, now)
         except Exception:
             log.exception("Foydalanuvchi %s uchun xato", user["user_id"])
+    try:
+        await retry_stuck_evaluations(bot)
+    except Exception:
+        log.exception("Orqa fon qayta urinishida xato")
 
 
 async def run(bot: Bot):

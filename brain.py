@@ -71,6 +71,32 @@ def _indexes(value, n):
     return out
 
 
+def _fallback_exercises(daily_minutes, raw):
+    lines = [ln.strip() for ln in re.split(r"[\n,;]+", raw) if ln.strip()]
+    named = []
+    for ln in lines:
+        m = re.match(r"(.+?)[\s\-–:]+(\d+(?:[.,]\d+)?)\s*(soat|daqiqa|daq|min)", ln, re.I)
+        if m:
+            name = m.group(1).strip(" -:")
+            value = float(m.group(2).replace(",", "."))
+            minutes = int(round(value * 60)) if m.group(3).lower() == "soat" else int(round(value))
+            if name and minutes > 0:
+                named.append({"name": name[:80], "minutes": minutes})
+    if named:
+        total = sum(x["minutes"] for x in named)
+        if total > daily_minutes:
+            k = daily_minutes / total
+            for x in named:
+                x["minutes"] = max(1, int(x["minutes"] * k))
+        return named
+    chunk = max(10, daily_minutes // 3)
+    return [
+        {"name": "Mashq 1", "minutes": chunk},
+        {"name": "Mashq 2", "minutes": chunk},
+        {"name": "Mashq 3", "minutes": daily_minutes - 2 * chunk},
+    ]
+
+
 async def build_exercises(goal, daily_minutes, raw):
     user_part = raw.strip() or "Foydalanuvchi mashqlarni o'zi tanlamadi. Maqsadga mos 3-5 ta mashq taklif qil."
     prompt = (
@@ -85,17 +111,18 @@ async def build_exercises(goal, daily_minutes, raw):
         "Mashq nomlari qisqa va aniq bo'lsin.\n"
         'Faqat JSON qaytar: {"exercises":[{"name":"...","minutes":30}]}'
     )
-    data = await _generate(prompt, True, timeout=30)
     try:
+        data = await _generate(prompt, True, timeout=30)
         items = [
             {"name": str(x["name"]).strip()[:80], "minutes": int(round(float(x["minutes"])))}
             for x in data["exercises"]
         ]
-    except (KeyError, TypeError, ValueError) as exc:
-        raise BrainError("noto'g'ri format") from exc
-    items = [x for x in items if x["name"] and x["minutes"] > 0][:10]
-    if not items:
-        raise BrainError("bo'sh ro'yxat")
+        items = [x for x in items if x["name"] and x["minutes"] > 0][:10]
+        if not items:
+            raise BrainError("bo'sh ro'yxat")
+    except (BrainError, KeyError, TypeError, ValueError) as exc:
+        log.warning("Gemini butunlay javob bermadi (%s), mahalliy zaxira reja ishlatilmoqda", exc)
+        return _fallback_exercises(daily_minutes, user_part)
     total = sum(x["minutes"] for x in items)
     if total > daily_minutes:
         k = daily_minutes / total

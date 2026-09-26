@@ -327,53 +327,8 @@ async def cb_done(cb: CallbackQuery, bot: Bot):
     wait = await cb.message.answer("🧠 Main Brain natijani baholayapti...")
 
     user = await db.get_user(cb.from_user.id)
-    tasks = plan.effective_tasks(day)
-    photos = []
-    for file_id in file_ids[: config.MAX_GEMINI_PHOTOS]:
-        try:
-            photos.append((await bot.download(file_id)).read())
-        except Exception:
-            log.exception("Rasm yuklab olinmadi")
-    try:
-        result = await brain.evaluate_day(user["goal"], tasks, day["report_text"], photos, len(file_ids))
-    except brain.BrainError as exc:
-        log.error("evaluate_day muvaffaqiyatsiz (day_id=%s): %s", day_id, exc, exc_info=True)
-        await db.update_day(day_id, status="collecting_photos")
-        await wait.edit_text(
-            "⚠️ Main Brain hozir javob bera olmadi. Birozdan so'ng «Tayyor» tugmasini qayta bosing.",
-            reply_markup=kb([("✅ Tayyor", f"done:{day_id}")]),
-        )
-        return
-
-    score = result["score"]
-    missed = [tasks[i - 1] for i in result["missed"]]
-    if score < config.PASS_SCORE and not missed:
-        missed = tasks
-    done_names = [tasks[i - 1]["name"] for i in result["done"]]
-    missed_items = [{"name": t["name"], "minutes": t["minutes"]} for t in missed]
-    nxt = await service.close_day(user, day, score, result["feedback"], missed_items, "done")
-
-    lines = [f"📊 <b>Bugungi baho: {score}/10</b>"]
-    if done_names:
-        lines.append("\n✅ <b>Bajarilgan:</b>\n" + "\n".join(f"• {esc(n)}" for n in done_names))
-    if missed:
-        lines.append("\n❌ <b>Bajarilmagan:</b>\n" + "\n".join(f"• {esc(t['name'])}" for t in missed))
-    if result["feedback"]:
-        lines.append(f"\n💬 {esc(result['feedback'])}")
-
-    if score >= config.PASS_SCORE:
-        upcoming = await db.get_next_pending_day(user["user_id"], day["day"])
-        if upcoming:
-            lines.append(f"\n🔥 Zo'r! Reja o'zgarishsiz davom etadi. Keyingi ish kuni: {plan.fmt_date(upcoming['day'])}.")
-        else:
-            lines.append("\n🔥 Zo'r! Bu oxirgi ish kuni edi.")
-    elif nxt:
-        lines.append(f"\n➕ Bajarilmagan vazifalar <b>{plan.fmt_date(nxt['day'])}</b> kungi rejaga qo'shildi.")
-    else:
-        lines.append("\nBu oxirgi ish kuni edi.")
-
-    await wait.edit_text("\n".join(lines))
-    await service.check_finish(bot, user["user_id"])
+    fresh_day = await db.get_day(day_id)
+    await service.try_evaluate(bot, user, fresh_day, announce=wait)
 
 
 async def _context_line(user):
